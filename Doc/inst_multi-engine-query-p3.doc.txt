@@ -1,0 +1,57 @@
+Install the multi-engine query utility on the Utility appliance
+
+1) Connect to the Utility or Portal Appliance as "nexthink" (expects to have Ansible Playbook installed)
+
+2) Create the folders:
+    /home/nexthink/custom/ansible/inst_multi-engine-query-p3
+    /home/nexthink/custom/ansible/inst_multi-engine-query-p3/source
+    /home/nexthink/custom/ansible/inst_multi-engine-query-p3/queries
+    /home/nexthink/custom/ansible/inst_multi-engine-query-p3/python
+    (e.g.  mkdir -p custom/ansible/inst_multi-engine-query-p3
+           mkdir -p custom/ansible/inst_multi-engine-query-p3/source
+           mkdir -p custom/ansible/inst_multi-engine-query-p3/queries
+           mkdir -p custom/ansible/inst_multi-engine-query-p3/python)
+
+3) Copy the *.yml, *.sh, *.cfg, and *.txt files from the multi-engine-query
+    project's Ansible\inst_multi-engine-query-p3 directory to the Appliance's 
+    /home/nexthink/custom/ansible/inst_multi-engine-query-p3 folder
+
+4) Copy the following files from the multi-engine-query-p3 project's Python source directory
+    to the Appliance's /home/nexthink/custom/ansible/inst_multi-engine-query-p3/source folder,
+    Include *.py, *.sh, *.txt, and .python-version
+
+5) Copy the files from the multi-engine-query project's Python\<env>\* directory
+    to the Appliance's /home/nexthink/custom/ansible/inst_multi-engine-query-p3/source folder
+    Where <env> = POV or PROD
+
+6) Copy the files from the multi-engine-query project's Queries directory
+    to the Appliance's /home/nexthink/custom/ansible/inst_multi-engine-query-p3/queries folder
+    Where <env> = POV or PROD
+
+7) If a specific version of Python is required, but must be installed from a local copy of
+    the installation image, copy the required *.xz file to the Appliance's
+    /home/nexthink/custom/ansible/inst_multi-engine-query-p3/python folder.
+    Make sure that the associated controlling variables in the .yml file are set properly.
+
+8) Once those files are present in the 
+   /home/nexthink/custom/ansible/inst_multi-engine-query-p3 folder, and
+   /home/nexthink/custom/ansible/inst_multi-engine-query-p3/source, queries,
+   and python folder respectively, open a shell on the Utility VM and go to the
+   /home/nexthink/custom/ansible/inst_multi-engine-query-p3 folder
+   (It should contain the yml playbook)
+
+8) Set the *.sh files to be executable (chmod +x *.sh)
+
+9) Enter the following command to update all engines:
+    sudo sh inst_multi-engine-query-p3.sh [-v | -vv | -vvv]
+	(where -v | -vv | -vvv are the optional verbosity flags)
+OR directly form the command line:
+    sudo ansible-playbook [-v | -vv | -vvv] -i ./hosts-local.yml -u root \
+    inst_multi-engine-query-p3.yml
+	(where -v | -vv | -vvv are the optional verbosity flags)
+
+
+Notes:
+Note 1: you may have to run it iteratively wihth the .retry file if they do not all complete for timing reasons.
+Note 2: After each run, the ansible log will be in: /home/nexthink/custom/ansible/inst_multi-engine-query-p3/inst_multi-engine-query-p3.<timestamp>.log
+Note 3: If you pass -vv or higher, the .yml file may also emit some debug statements

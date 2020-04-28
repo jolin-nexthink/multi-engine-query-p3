@@ -1,0 +1,6 @@
+[appliance]
+localhost
+
+[appliance:vars]
+ansible_connection = local
+hardening_version = "1"

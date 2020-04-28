@@ -1,0 +1,336 @@
+---
+- name: Install multi-engine-query-p3 on the utility VM
+  hosts: appliance
+  become: true
+  
+  vars:
+    # Nexthink user and home directory
+    nexthink_user: "nexthink"
+    nexthink_home: "/home/{{ nexthink_user }}"
+    # Project name, used to build other variables
+    project_name: "multi-engine-query-p3"
+    # Source locations
+    project_source_files: "{{ nexthink_home }}/custom/ansible/inst_{{ project_name }}/source"
+    project_source_queries: "{{ nexthink_home }}/custom/ansible/inst_{{ project_name }}/queries"
+    # Base location on target for custom projects
+    project_base: "{{ nexthink_home }}/custom"
+    # Location on target to install this project (typically off of project_base)
+    project_home: "{{ project_base }}/{{ project_name }}"
+    # Location to put the queries that are run by the utility once installed
+    project_queries: "{{ project_home }}/queries"
+    # Location to put the output files generated from running the utility
+    project_output: "{{ project_home }}/output"
+    # Location to put the log file generated when running the utility
+    project_logs: "{{ project_output }}/logs"
+    # Set to True and specify the version if the utility needs to run under a specific version of Python
+    use_target_python: True
+    target_python: "3.6.8"
+    # Set to True to have the specific Python version installed by PyEnv
+    install_target_python: True
+    # Set to True if you need to install a target Python version that PyEnv must install from a local source
+    #   Typically, this is only necessary if InfoSec does not allow access to the Python distribution servers
+    copy_target_python: True
+    # The location to grab the Python *.xz file from if copy_target_python is True
+    project_source_target_python: "{{ nexthink_home }}/custom/ansible/inst_{{ project_name }}/python"
+    # Set to True if the project uses and requires MSSQL via ODBC
+    needs_odbc_and_mssql: False
+    # Set to True if you would like a crond job created to run the utility
+    create_cron_job: False
+  
+  tasks:
+   
+    - name: check for sentinal
+      stat:
+        path: "{{ nexthink_home }}/{{ project_name }}.done"
+      register: sentinal
+
+    - name: Make sure git is installed
+      yum:
+        name: git
+        state: present
+      when: not sentinal.stat.exists
+
+    # The following steps are only needed if you need to install additional
+    #    versions of Python that will need to be compiled.
+    - name: Make sure gcc is installed (if using target_python)
+      yum:
+        name: gcc
+        state: present
+      when: ((not sentinal.stat.exists) and install_target_python)
+
+    - name: Make sure gcc-c++ is installed (if using target_python)
+      yum:
+        name: gcc-c++
+        state: present
+      when: ((not sentinal.stat.exists) and install_target_python)
+
+    - name: Make sure python prerequisites installed (if using target_python)
+      yum:
+        name: "{{ item }}"
+        state: present
+      with_items:
+        - zlib-devel
+        - readline-devel
+        - bzip2-devel
+        - sqlite-devel
+        - openssl-devel
+        - xz-devel
+        - libffi-devel
+      when: ((not sentinal.stat.exists) and install_target_python)
+
+    - name: Add MS SQL Server driver repository
+      get_url:
+        url: 'https://packages.microsoft.com/config/rhel/7/prod.repo'
+        dest: /etc/yum.repos.d/mssql-release.repo
+      when: ((not sentinal.stat.exists) and needs_odbc_and_mssql)
+      
+    - name: Remove conflicting odbc packages
+      yum:
+        name: "{{ item }}"
+        state: absent
+      with_items:
+        - unixODBC-utf16
+        - unixODBC-utf16-devel
+      when: ((not sentinal.stat.exists) and needs_odbc_and_mssql)
+
+    - name: Install MS ODBC Driver
+      shell: "ACCEPT_EULA=Y yum -y install msodbcsql17"
+      when: ((not sentinal.stat.exists) and needs_odbc_and_mssql)
+
+    - name: Install odbc headers
+      yum:
+        name: unixODBC-devel
+        state: present
+      when: ((not sentinal.stat.exists) and needs_odbc_and_mssql)
+
+    - name: check if pyenv is installed
+      stat:
+        path: "{{ project_base }}/.pyenv"
+      register: pyenv_path
+      when: not sentinal.stat.exists
+
+    - name: Install pyenv
+      git:
+        repo: https://github.com/pyenv/pyenv.git
+        dest: "{{ project_base }}/.pyenv"
+        force: no
+        update: no
+        version: "master"
+        accept_hostkey: yes
+      when: "(not sentinal.stat.exists) and (not pyenv_path.stat.exists)"
+
+    - name: Update pyenv if already installed
+      git:
+        repo: https://github.com/pyenv/pyenv.git
+        dest: "{{ project_base }}/.pyenv"
+        force: no
+        update: yes
+        version: "master"
+        accept_hostkey: yes
+      when: "(not sentinal.stat.exists) and (pyenv_path.stat.exists)"
+
+    - name: check if pyenv-virtualenv is installed
+      stat:
+        path: "{{ project_base }}/.pyenv/plugins/pyenv-virtualenv"
+      register: pyenv_virtualenv_path
+      when: not sentinal.stat.exists
+
+    - name: Install pyenv-virtualenv plugin
+      git:
+        repo: https://github.com/pyenv/pyenv-virtualenv.git
+        dest: "{{ project_base }}/.pyenv/plugins/pyenv-virtualenv"
+        force: no
+        update: no
+        version: "master"
+        accept_hostkey: yes
+      when: "(not sentinal.stat.exists) and (not pyenv_virtualenv_path.stat.exists)"
+
+    - name: Update pyenv-virtualenv plugin if exists
+      git:
+        repo: https://github.com/pyenv/pyenv-virtualenv.git
+        dest: "{{ project_base }}/.pyenv/plugins/pyenv-virtualenv"
+        force: no
+        update: yes
+        version: "master"
+        accept_hostkey: yes
+      when: "(not sentinal.stat.exists) and (pyenv_virtualenv_path.stat.exists)"
+
+    - name: Add path etc to .bashrc.
+      lineinfile:
+        dest: "{{ nexthink_home }}/.bashrc"
+        state: present
+        create: yes
+        line: "{{ item }}"
+      with_items:
+        - 'export PYENV_ROOT="{{ project_base }}/.pyenv"'
+        - 'export PATH="$PYENV_ROOT/bin:$PATH"'
+        - 'eval "$(pyenv init -)"'
+        - 'eval "$(pyenv virtualenv-init -)"'
+      when: "(not sentinal.stat.exists) and (not pyenv_path.stat.exists) and (not pyenv_virtualenv_path.stat.exists)"
+
+    - name: Ensure project permissions are set properly after pyenv was installed
+      file: 
+        path: "{{ project_base }}"
+        recurse: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        state: directory
+      when: not sentinal.stat.exists
+
+    - name: Copy project python version (if target_python is needed)
+      copy:
+        src: "{{ item }}"
+        dest: "{{ project_base }}/.pyenv/cache/"
+        force: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        mode: 0640
+      with_fileglob:
+        - "{{ project_source_target_python }}/*.xz"
+      when: ((not sentinal.stat.exists) and copy_target_python)
+
+    - name: Install project python version (if target_python is needed)
+      become: yes
+      become_user: "{{ nexthink_user }}"
+      shell: . {{ nexthink_home }}/.bashrc && {{ project_base }}/.pyenv/bin/pyenv install {{ target_python }}
+       creates="{{ project_base }}/.pyenv/versions/{{ target_python }}"
+      when: ((not sentinal.stat.exists) and install_target_python)
+
+    - name: Create virtualenv with pyenv and target Python
+      become: yes
+      become_user: "{{ nexthink_user }}"
+      shell: . {{ nexthink_home }}/.bashrc && {{ project_base }}/.pyenv/bin/pyenv virtualenv {{ target_python }} {{ project_name }}
+      when: ((not sentinal.stat.exists) and use_target_python)
+
+    - name: Create virtualenv with pyenv and System (default) Python
+      become: yes
+      become_user: "{{ nexthink_user }}"
+      shell: . {{ nexthink_home }}/.bashrc && {{ project_base }}/.pyenv/bin/pyenv virtualenv {{ project_name }}
+      when: ((not sentinal.stat.exists) and (not use_target_python))
+
+    - name: Ensure project permissions are set properly after virtualenv created
+      file: 
+        path: "{{ project_base }}"
+        recurse: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        state: directory
+      when: not sentinal.stat.exists
+
+    - name: Create the installation path
+      file:
+        path: "{{ project_home }}"
+        state: directory
+        mode: 0750
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+      when: not sentinal.stat.exists
+
+    - name: Copy source files over
+      copy:
+        src: "{{ item }}"
+        dest: "{{ project_home }}/"
+        force: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        mode: 0640
+      with_fileglob:
+        - "{{ project_source_files }}/*.py"
+        - "{{ project_source_files }}/.*"
+        - "{{ project_source_files }}/*.txt"
+      when: not sentinal.stat.exists
+
+    - name: Copy bash scripts over
+      copy:
+        src: "{{ item }}"
+        dest: "{{ project_home }}/"
+        force: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        mode: 0751
+      with_fileglob:
+        - "{{ project_source_files }}/*.sh"
+      when: not sentinal.stat.exists
+
+    - name: Create the query path
+      file:
+        path: "{{ project_queries }}"
+        state: directory
+        mode: 0750
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+      when: not sentinal.stat.exists
+
+    - name: Copy any query files over
+      copy:
+        src: "{{ item }}"
+        dest: "{{ project_queries }}"
+        force: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        mode: 0640
+      with_fileglob:
+        - "{{ project_source_queries }}/*.*"
+      when: not sentinal.stat.exists
+
+    - name: Install project requirements for Targeted Python
+      pip:
+        requirements: "{{ project_home }}/requirements.txt"
+        virtualenv:  "{{ project_base }}/.pyenv/versions/{{ target_python }}/envs/{{ project_name }}"
+        virtualenv_command:  "{{ project_base }}/.pyenv/versions/{{ target_python }}/envs/{{ project_name }}/bin/pip3"
+        virtualenv_site_packages: yes
+      when: ((not sentinal.stat.exists) and use_target_python)
+
+    - name: Install project requirements for System (default) Python
+      pip:
+        requirements: "{{ project_home }}/requirements.txt"
+        virtualenv:  "{{ project_base }}/.pyenv/versions/{{ project_name }}"
+        virtualenv_command:  "{{ project_base }}/.pyenv/versions/{{ project_name }}/bin/pip3"
+        virtualenv_site_packages: yes
+      when: ((not sentinal.stat.exists) and (not use_target_python))
+
+    - name: Create output directory
+      file:
+        path: "{{ project_output }}"
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        state: directory
+      when: not sentinal.stat.exists
+
+    - name: Create logs directory
+      file:
+        path: "{{ project_logs }}"
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        state: directory
+      when: not sentinal.stat.exists
+
+    - name: Ensure project permissions are set properly after all other project requirements
+      file: 
+        path: "{{ project_base }}"
+        recurse: yes
+        owner: "{{ nexthink_user }}"
+        group: "{{ nexthink_user }}"
+        state: directory
+      when: not sentinal.stat.exists
+
+    # Create cron file under /etc/cron.d job to run daily at 5:00 AM server-relative time
+    # to run the test query on all engines
+    - name: Create cron job
+      cron:
+        name: "{{ project_name }}"
+        minute: "0"
+        hour: "5"
+        job: "{{ project_home }}/run_with_debug_flags.sh -i -t s -n test"
+        user: "{{ nexthink_user }}"
+        cron_file: "{{ project_name }}-crontab"
+      when: ((not sentinal.stat.exists) and create_cron_job)
+
+    - name: Create sentinal
+      file:
+        path: "{{ nexthink_home }}/{{ project_name }}.done"
+        state: touch
+        group: root
+        owner: root
+        mode: 0640
+      when: not sentinal.stat.exists
