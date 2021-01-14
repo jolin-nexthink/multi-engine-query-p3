@@ -252,7 +252,7 @@ class MultiEngineQueryConfig(object):
         query_conf = None
         found = False
         for qf in query_files:
-            logger.debug('Lookginf for NXQL Query (Group or Single) "{0}".  Reading file: "{1}".'.format(self._query_name, qf))
+            logger.debug('Looking for NXQL Query (Group or Single) "{0}".  Reading file: "{1}".'.format(self._query_name, qf))
             query_conf = configparser.ConfigParser(
                 interpolation=ExtendedInterpolation(), allow_no_value=True)
             query_conf.read(qf)
