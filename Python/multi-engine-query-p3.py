@@ -1,8 +1,8 @@
 #!/usr/bin/python
 
-# Author: Sorin Gancea, Nexthink Professional Services (sorin.gancea@nexthink.com)
+# Original Author: Sorin Gancea, Nexthink Professional Services (sorin.gancea@nexthink.com)
 # Last change date: 2020.04.14 (by Jordan Olin, jordan.olin@nexthink.com)
-#     Convered to Python 3.6, switched to use requests module instead of urllib
+#     Convered to Python 3.6, completely refactored, switched to use requests module instead of urllib
 #
 # Python version 3.6
 #
